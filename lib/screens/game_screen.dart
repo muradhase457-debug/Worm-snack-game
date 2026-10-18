@@ -19,7 +19,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   double _joyX = 0;
   double _joyY = 0;
   bool _boosting = false;
-  bool _started = false;
+  bool _started = true;
   bool _showGameOver = false;
   int _finalScore = 0;
   int _finalFoods = 0;
@@ -33,18 +33,47 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       DeviceOrientation.landscapeRight,
     ]);
     _ticker = createTicker(_onTick);
-    _initGame();
+    // Start instantly with defaults - never wait for storage.
+    // This fixes the black loading screen getting stuck on PLAY.
+    try {
+      _engine.startGame(colors: const [Colors.white], faceEmoji: '😊');
+    } catch (_) {
+      // If engine fails, _started stays true and UI still shows.
+    }
+    _started = true;
+    if (!_ticker.isActive) _ticker.start();
+    // Load saved skin/face in background and apply it.
+    _loadSavedSkin();
   }
 
-  Future<void> _initGame() async {
-    final skinId = await GameStorage.getSkin();
-    final faceId = await GameStorage.getFace();
-    final skin = GameSkins.skinById(skinId);
-    final face = GameSkins.faceById(faceId);
-    _engine.startGame(colors: skin.colors, faceEmoji: face.emoji);
-    await GameStorage.incrementGamesPlayed();
-    setState(() => _started = true);
-    _ticker.start();
+  Future<void> _loadSavedSkin() async {
+    try {
+      final skinId = await GameStorage.getSkin().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => 'white',
+      );
+      final faceId = await GameStorage.getFace().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => 'happy',
+      );
+      if (!mounted) return;
+      // Count this game, never block the game on it.
+      try {
+        await GameStorage.incrementGamesPlayed().timeout(
+          const Duration(seconds: 2),
+          onTimeout: () {},
+        );
+      } catch (_) {}
+      // If saved skin is the default, nothing to change.
+      if (skinId == 'white' && faceId == 'happy') return;
+      if (!mounted) return;
+      final skin = GameSkins.skinById(skinId);
+      final face = GameSkins.faceById(faceId);
+      _engine.startGame(colors: skin.colors, faceEmoji: face.emoji);
+      if (mounted) setState(() {});
+    } catch (_) {
+      // Keep playing with defaults if storage fails.
+    }
   }
 
   void _onTick(Duration elapsed) {
@@ -53,7 +82,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     if (_engine.gameOver && !_showGameOver) {
       _onGameOver();
     }
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   Future<void> _onGameOver() async {
@@ -62,10 +91,12 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     _finalScore = _engine.player.score;
     _finalFoods = _engine.foodsEaten;
     _finalCoins = _engine.coinsCollected;
-    await GameStorage.setBestScore(_finalScore);
-    await GameStorage.setBestLength(_engine.player.length);
-    await GameStorage.addCoins(_finalCoins * 10);
-    await GameStorage.addTotalFoods(_finalFoods);
+    try {
+      await GameStorage.setBestScore(_finalScore);
+      await GameStorage.setBestLength(_engine.player.length);
+      await GameStorage.addCoins(_finalCoins * 10);
+      await GameStorage.addTotalFoods(_finalFoods);
+    } catch (_) {}
     if (!mounted) return;
     setState(() {});
   }
@@ -75,7 +106,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     _finalScore = 0;
     _finalFoods = 0;
     _finalCoins = 0;
-    _initGame();
+    // Restart instantly, then apply saved skin in background.
+    try {
+      _engine.startGame(colors: const [Colors.white], faceEmoji: '😊');
+    } catch (_) {}
+    if (!_ticker.isActive) _ticker.start();
+    if (mounted) setState(() {});
+    _loadSavedSkin();
   }
 
   @override
