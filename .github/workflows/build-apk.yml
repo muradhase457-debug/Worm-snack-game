@@ -1,0 +1,66 @@
+name: Build Worm Snake APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter stable
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Generate Android scaffold
+        run: |
+          flutter create . --platforms=android --project-name worm_snake_game --org com.murad || true
+          ls -la android/ || echo "no android folder"
+
+      - name: Force compileSdk 36 for every Android module
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat > ~/.gradle/init.d/compile-sdk.gradle <<'GRADLE'
+          allprojects {
+            afterEvaluate { p ->
+              try {
+                if (p.hasProperty('android')) {
+                  p.android.compileSdkVersion = 36
+                }
+              } catch (Exception e) {}
+              try {
+                if (p.hasProperty('android')) {
+                  p.android.compileSdk = 36
+                }
+              } catch (Exception e) {}
+            }
+          }
+          GRADLE
+          cat ~/.gradle/init.d/compile-sdk.gradle
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Analyze (non-blocking)
+        run: flutter analyze || true
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: worm-snake-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          
