@@ -51,6 +51,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "986163719160-7gnse63rf123fd80go618uvc8olmmj2a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.murad.worm_snake_game",
+            "certificate_hash": "579840f05a9f75ed0782b0440250db83b5eddfc5"
+          }
+        },
+        {
           "client_id": "986163719160-9rmrgj796962tipnelci6s9pqv34c2h2.apps.googleusercontent.com",
           "client_type": 3
         }
