@@ -10,6 +10,8 @@ class GameStorage {
   static const _unlockedFacesKey = 'worm_unlocked_faces';
   static const _totalFoodsKey = 'worm_total_foods';
   static const _gamesPlayedKey = 'worm_games_played';
+  static const _photoKey = 'worm_photo_path';
+  static const _soundKey = 'worm_sound';
 
   static Future<int> getCoins() async {
     final prefs = await SharedPreferences.getInstance();
@@ -108,5 +110,29 @@ class GameStorage {
     final prefs = await SharedPreferences.getInstance();
     final cur = prefs.getInt(_gamesPlayedKey) ?? 0;
     await prefs.setInt(_gamesPlayedKey, cur + 1);
+  }
+
+  static Future<String?> getPhotoPath() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_photoKey);
+  }
+
+  static Future<void> setPhotoPath(String? value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value == null) {
+      await prefs.remove(_photoKey);
+    } else {
+      await prefs.setString(_photoKey, value);
+    }
+  }
+
+  static Future<bool> getSound() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_soundKey) ?? true;
+  }
+
+  static Future<void> setSound(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_soundKey, value);
   }
 }
