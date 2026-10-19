@@ -82,7 +82,7 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Padding(
               padding: const EdgeInsets.all(32),
               child: Column(
-                mainAxisSize: MainAxis.min,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text('🐛', style: TextStyle(fontSize: 64)),
                   const Text(
