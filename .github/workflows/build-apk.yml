@@ -28,10 +28,31 @@ jobs:
           flutter create . --platforms=android --project-name worm_snake_game --org com.murad || true
           ls -la android/ || echo "no android folder"
 
+      - name: Install permanent signing key
+        # ONE permanent key for every build, so the SHA-1 never changes.
+        # ONE-TIME SETUP: GitHub repo -> Settings -> Secrets and variables ->
+        # Actions -> New repository secret -> Name: DEBUG_KEYSTORE_BASE64 ->
+        # paste the long base64 text -> Add secret.
+        # Permanent SHA-1: 57:98:40:F0:5A:9F:75:ED:07:82:B0:44:02:50:DB:83:B5:ED:DF:C5
+        # Add this SHA-1 in Firebase (Project settings -> Android app
+        # com.murad.worm_snake_game -> SHA certificate fingerprints), then
+        # re-download google-services.json and upload it to the repo root.
+        env:
+          KS_B64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "::warning::GitHub secret DEBUG_KEYSTORE_BASE64 is missing - APK will be signed with a fresh debug key and Google Sign-In will NOT work. Add the secret (Settings -> Secrets and variables -> Actions)."
+          else
+            mkdir -p ~/.android
+            echo "$KS_B64" | base64 -d > ~/.android/debug.keystore
+            echo "Permanent key installed. Its SHA-1:"
+            keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android 2>/dev/null | grep -E "SHA1" || { echo "::error::Keystore could not be read - the secret was pasted wrongly."; exit 1; }
+          fi
+
       - name: Generate firebase_options.dart + Google Sign-In config
         run: |
           python3 << 'PYEOF'
-          import json, pathlib
+          import json, pathlib, subprocess, os
           gs = pathlib.Path('google-services.json')
           if not gs.exists():
               print('NO google-services.json - leaving firebase_options.dart template')
@@ -83,11 +104,29 @@ jobs:
               res_dir.mkdir(parents=True, exist_ok=True)
               xml = f"""<?xml version="1.0" encoding="utf-8"?>
           <resources>
-              <string name="default_web_client_id">{web_client_id}</string>
+              <string name="default_web_client_id" translatable="false">{web_client_id}</string>
           </resources>
           """
               (res_dir / 'google_signin_config.xml').write_text(xml)
               print('google_signin_config.xml written, web_client_id set:', bool(web_client_id))
+              # Warn if the permanent SHA-1 is not registered in google-services.json
+              try:
+                  out = subprocess.run(['keytool','-list','-v','-keystore',os.path.expanduser('~/.android/debug.keystore'),'-alias','androiddebugkey','-storepass','android'], capture_output=True, text=True).stdout
+                  sha1 = ''
+                  for line in out.splitlines():
+                      if 'SHA1:' in line:
+                          sha1 = line.split('SHA1:')[1].strip().replace(':','').lower()
+                  hashes = []
+                  for oc in c0.get('oauth_client', []) or []:
+                      ai = oc.get('android_info') or {}
+                      if ai.get('certificate_hash'):
+                          hashes.append(ai['certificate_hash'].lower())
+                  if sha1 and sha1 not in hashes:
+                      print('::warning::This build SHA-1 is NOT in google-services.json. Add it in Firebase (Project settings -> Android app -> SHA certificate fingerprints), re-download google-services.json, upload to repo root, build again.')
+                  else:
+                      print('SHA-1 of the permanent key is in google-services.json - good.')
+              except Exception as e:
+                  print('SHA-1 check skipped:', e)
           PYEOF
 
       - name: Force compileSdk 36 for every Android module
@@ -120,8 +159,30 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
+      - name: Re-sign APK with the permanent key
+        # Makes the SHA-1 always the same, whatever key Gradle used.
+        run: |
+          APKSIGNER=$(ls -d "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then echo "::error::apksigner not found in Android build-tools"; exit 1; fi
+          echo "Using $APKSIGNER"
+          cd build/app/outputs/flutter-apk
+          if [ -f "$HOME/.android/debug.keystore" ]; then
+            "$APKSIGNER" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android --ks-key-alias androiddebugkey --key-pass pass:android --out app-release-signed.apk app-release.apk
+            echo "=== Certificate of the FINAL apk (this SHA-1 must be in Firebase) ==="
+            "$APKSIGNER" verify --print-certs app-release-signed.apk | grep -E "SHA-1|SHA-256"
+            if ! "$APKSIGNER" verify --print-certs app-release-signed.apk | grep -q "579840f05a9f75ed0782b0440250db83b5eddfc5"; then
+              echo "::error::Final APK is NOT signed with the permanent key. Check the DEBUG_KEYSTORE_BASE64 secret."
+              exit 1
+            fi
+            echo "OK: final APK is signed with the permanent key."
+          else
+            cp app-release.apk app-release-signed.apk
+            echo "::warning::No permanent key - signed APK has a fresh debug key. Google Sign-In will not work until the secret is added."
+          fi
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: worm-snake-v2-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/app-release-signed.apk
+          
