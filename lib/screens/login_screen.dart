@@ -36,11 +36,11 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/home');
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(() {
           _busy = false;
-          _msg = 'Sign-in failed. Try again.';
+          _msg = 'Google login error:\n$e';
         });
       }
     }
@@ -56,11 +56,11 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user != null) await AuthService.ensureUserDoc();
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/home');
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(() {
           _busy = false;
-          _msg = 'Guest login failed. Try again.';
+          _msg = 'Guest login error:\n$e';
         });
       }
     }
@@ -82,7 +82,7 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Padding(
               padding: const EdgeInsets.all(32),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisSize: MainAxis.min,
                 children: [
                   const Text('🐛', style: TextStyle(fontSize: 64)),
                   const Text(
